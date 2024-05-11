@@ -12,6 +12,11 @@ dummyTable = array2table(dummies, 'VariableNames', {'Casa', 'Departamento', 'PH'
 dummyTable.PH = [];  % Eliminación para evitar multicolinealidad
 data = [data dummyTable];
 
+% Conversion precio de dolares a euros teniendo en cuenta que
+% estos datos son de 2023
+
+data.property_price = data.property_price * 0.93;
+
 % Eliminacion de caracteristicas no necesarias
 data.property_type = [];
 data.pxm2 = []; 
@@ -43,10 +48,10 @@ YTest = y(splitPoint+1:end);
 
 %% Validacion
 % Random sampling para ver qué modelo se ajusta mejor
-numReps = 3;
+numReps = 10;
 Ers = zeros(6,1);
 
-for order=1:10
+for order=1:8
     error = zeros(numReps,1);
     for k=1:numReps
         % Muestreo aleatorio de los datos de validación
@@ -95,7 +100,7 @@ best_rmse = inf;
 
 for i=2:orden
     XTrain = [XTrain XVal.^i];
-    XTest = [XTest XTest.^i];
+    XTest = [XTest Xaux.^i];
 end
 
 for i = 1:size(XTrain, 2)
@@ -112,29 +117,29 @@ for i = 1:size(XTrain, 2)
     end
 
     [min_rmse, best_feature] = min(feature_rmse);
-    if min_rmse < best_rmse-200
+    if min_rmse < best_rmse
         best_rmse = min_rmse;
         model_features = [model_features best_feature];
         selected_features(best_feature) = true;
-        disp(['Adding feature ', num2str(best_feature), ' with RMSE: ', num2str(best_rmse)]);
+        disp(['Adding feature ', num2str(best_feature), ' with ERRABS: ', num2str(best_rmse)]);
     else
         break;
     end
 end
 
-
+%% Prueba del modelo
 % Modelo final con las características seleccionadas
+
 A = [XTrain(:,features) ones(size(XTrain, 1), 1)];
 sol = pinv(A) * YTrain;
-YPredTrain = A * sol;
-final_rmse = mean(abs(YPredTrain - YTrain));
-disp(['Final RMSE with selected features: ', num2str(final_rmse)]);
-
-% Predicciones sobre el conjunto de prueba
 ATest = [XTest(:,features) ones(size(XTest, 1), 1)];
 YPred = ATest * sol;
-test_rmse = mean(abs(YPred - YTest));
-disp(['Test RMSE with selected features: ', num2str(test_rmse)]);
+errabs_test = mean(abs(YPred - YTest));
+errabs_muestra = abs(YPred-YTest);
+disp(['ErrAbs modelo y test: ', num2str(errabs_test)]);
+
+[YTest, ind] = sort(YTest);
+YPred = YPred(ind);
 
 % Visualización de los resultados
 figure(1);
@@ -146,3 +151,32 @@ ylabel('Precio de la Propiedad');
 title('Comparación de datos reales y predicciones');
 hold off;
 
+figure(2);
+plot(errabs_muestra, '*y');
+legend('Error absoluto');
+xlabel('Numero de muestra');
+ylabel('Error');
+title('Error absoluto');
+
+%% Prediccion sobre una casa
+
+lat = input('Introduce la latitud, (deberia ir entre -34.689943 y -34.5359645): ');
+lon = input('Introduce la longitud, (deberia ir entre -58.343238830600001 y -58.529930788599998): ');
+hab = input('Introduce el numero de habitaciones de la propiedad: ');
+dorm = input('Introduce el numero de dormitorios de la propiedad: ');
+surftot = input('Introduce la superficie total de la propiedad: ');
+surfcov = input('Introduce la superficie cubierta de la propiedad: ');
+casa = input('Introduce 1 si es una casa 0 si no: ');
+dep = input('Introduce 1 si es un departamento 0 si no: ');
+ph = input('Introduce 1 si es una propiedad horizontal 0 si no: ');
+
+Xcasa = [lat lon hab dorm surftot surfcov casa dep];
+Xcasa= (Xcasa-mean(x)) ./ std(x);
+Xaux = Xcasa;
+for i=2:orden
+    Xcasa = [Xcasa Xaux.^i];
+end
+A = [Xcasa(:,features) ones(size(Xcasa,1), 1)];
+Ycasa = A*sol;
+
+disp("Tu propiedad deberia tener un precio rondando los: "+Ycasa);
