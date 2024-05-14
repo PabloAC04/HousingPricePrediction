@@ -23,17 +23,33 @@ data.pxm2 = [];
 data.place_l3 = [];
 data.tipo_precio = [];
 
+% Identificación de valores atípicos
+outliers = isoutlier(data.property_price, 'quartiles');
+data(outliers, :) = [];
+
+outliers = isoutlier(data.property_surface_total, 'quartiles');
+data(outliers,:) = [];
+
+outliers = isoutlier(data.property_surface_covered, 'quartiles');
+data(outliers,:) = [];
+
+% Transformaciones de las variables
+
+
 % Definir la variable dependiente y las independientes
 y = data.property_price;
 data.property_price = []; % Eliminar la columna del precio de la tabla
 
 x = data.Variables;
 
-
-% Identificación de valores atípicos
-outliers = isoutlier(y, 'quartiles');
-x(outliers, :) = [];
-y(outliers) = [];
+% Graficar histogramas para cada característica
+figure(1);
+num_features = size(x, 2);
+for i = 1:num_features
+    subplot(ceil(num_features/3), 3, i);
+    histogram(x(:, i), 20);
+    title(data.Properties.VariableNames{i});
+end
 
 % Normalizacion simple de los datos media 0 y varianza 1
 
@@ -51,7 +67,7 @@ YTest = y(splitPoint+1:end);
 numReps = 10;
 Ers = zeros(6,1);
 
-for order=1:8
+for order=1:12
     error = zeros(numReps,1);
     for k=1:numReps
         % Muestreo aleatorio de los datos de validación
@@ -78,6 +94,7 @@ for order=1:8
     Ers(order) = mean(error);
 end
 
+figure(2);
 bar(Ers);
 xlabel('Order of Polynomial');
 ylabel('Average RMSE');
@@ -117,7 +134,7 @@ for i = 1:size(XTrain, 2)
     end
 
     [min_rmse, best_feature] = min(feature_rmse);
-    if min_rmse < best_rmse
+    if min_rmse < best_rmse-50
         best_rmse = min_rmse;
         model_features = [model_features best_feature];
         selected_features(best_feature) = true;
@@ -142,16 +159,16 @@ disp(['ErrAbs modelo y test: ', num2str(errabs_test)]);
 YPred = YPred(ind);
 
 % Visualización de los resultados
-figure(1);
-plot(YTest, 'b.'); hold on;
-plot(YPred, 'r.'); 
-legend('Datos reales', 'Predicciones');
+figure(3);
+plot(YPred, 'r.'); hold on;
+plot(YTest, 'b.'); hold off;
+legend('Predicciones', 'Datos reales');
 xlabel('Número de muestra');
 ylabel('Precio de la Propiedad');
 title('Comparación de datos reales y predicciones');
 hold off;
 
-figure(2);
+figure(4);
 plot(errabs_muestra, '*y');
 legend('Error absoluto');
 xlabel('Numero de muestra');
