@@ -1,199 +1,253 @@
 clear; close all;
 
-% Carga de datos
+% Data loading
 data = readtable('../data/properati_argentina_2021_tp1.csv');
 
-%% Fase de preprocesado de datos
+%% Data Preprocessing Phase
 
-% Convertir property_type a columna por tipo
+% Convert property_type to columns by type
 data.property_type = categorical(data.property_type);
-dummies = dummyvar(data.property_type);
-dummyTable = array2table(dummies, 'VariableNames', {'Casa', 'Departamento', 'PH'});
-dummyTable.PH = [];  % Eliminación para evitar multicolinealidad
+typeDummies = dummyvar(data.property_type);
+dummyTable = array2table(typeDummies, 'VariableNames', {'House', 'Apartment', 'PH'});
+dummyTable.PH = [];  % Elimination to avoid multicollinearity
 data = [data dummyTable];
 
-% Conversion precio de dolares a euros teniendo en cuenta que
-% estos datos son de 2023
-
+% Conversion of price from dollars to euros
 data.property_price = data.property_price * 0.93;
 
-% Eliminacion de caracteristicas no necesarias
+% Removal of unnecessary features
 data.property_type = [];
 data.pxm2 = []; 
 data.place_l3 = [];
 data.tipo_precio = [];
 
-% Identificación de valores atípicos
+% Outlier detection
 outliers = isoutlier(data.property_price, 'quartiles');
 data(outliers, :) = [];
-
 outliers = isoutlier(data.property_surface_total, 'quartiles');
 data(outliers,:) = [];
-
 outliers = isoutlier(data.property_surface_covered, 'quartiles');
 data(outliers,:) = [];
 
-% Transformaciones de las variables
-
-
-% Definir la variable dependiente y las independientes
-y = data.property_price;
-data.property_price = []; % Eliminar la columna del precio de la tabla
+% Define dependent and independent variables
+y = log(data.property_price); % We use log make the distribution more simetric
+data.property_price = []; 
 
 x = data.Variables;
 
-% Graficar histogramas para cada característica
-figure(1);
-num_features = size(x, 2);
-for i = 1:num_features
-    subplot(ceil(num_features/3), 3, i);
+% Plot histograms for each feature
+
+numFeatures = size(x, 2);
+for i = 1:numFeatures
+    subplot(ceil(numFeatures/3), 3, i);
     histogram(x(:, i), 20);
     title(data.Properties.VariableNames{i});
 end
 
-% Normalizacion simple de los datos media 0 y varianza 1
+% Simple normalization of the data to mean 0 and variance 1
+mu = mean(x);
+sigma = std(x);
+x = (x - mu) ./ sigma;
 
-x = (x-mean(x)) ./ std(x);
+% Shuffle of the data
+randomIndices = randperm(size(y, 1));
+y = y(randomIndices);
+x = x(randomIndices,:);
 
-% División de datos en validación y prueba
+% Data split into validation and test sets
 splitPoint = floor(0.80 * size(x, 1));
-XVal = x(1:splitPoint,:);
-YVal = y(1:splitPoint);
-XTest = x(splitPoint+1:end,:);
+XValidation = x(1:splitPoint, :);
+YValidation = y(1:splitPoint);
+XTest = x(splitPoint+1:end, :);
 YTest = y(splitPoint+1:end);
 
-%% Validacion
-% Random sampling para ver qué modelo se ajusta mejor
-numReps = 10;
-Ers = zeros(6,1);
+% Random sampling to see which polynomial fits better
+% Instead of using OLS its been used Ridge regresion
+% to prevent errors due to overfitting.
+numRepetitions = 10;
+errorSummaries = zeros(3, 1);
+errorSummariessin = zeros(3, 1);
+errorSummariessincos = zeros(3,1);
+rp = 0.7; % Ridge parameter (0<rp<1)
 
-for order=1:12
-    error = zeros(numReps,1);
-    for k=1:numReps
-        % Muestreo aleatorio de los datos de validación
-        ids = randperm(size(XVal, 1));
+for order = 1:3
+    error = zeros(numRepetitions, 1);
+    errorsin = zeros(numRepetitions, 1);
+    errorsincos = zeros(numRepetitions, 1);
+    for k = 1:numRepetitions
+        % Random sampling of validation data
+        ids = randperm(size(XValidation, 1));
         midPoint = floor(0.75 * length(ids));
-        xtrn = XVal(ids(1:midPoint), :);
-        ytrn = YVal(ids(1:midPoint));
-        xtst = XVal(ids(midPoint+1:end), :);
-        ytst = YVal(ids(midPoint+1:end));
-        
-        % Añadir términos polinomiales
+        XTrain = XValidation(ids(1:midPoint), :);
+        YTrain = YValidation(ids(1:midPoint));
+        XTry = XValidation(ids(midPoint+1:end), :);
+        YTry = YValidation(ids(midPoint+1:end));
+
+        % Add polynomial terms
+        XTrainPoly = XTrain;
+        XTryPoly = XTry;
         for j = 2:order
-            xtrn = [xtrn XVal(ids(1:midPoint),:).^j];
-            xtst = [xtst XVal(ids(midPoint+1:end),:).^j];
+            XTrainPoly = [XTrainPoly XTrain.^j];
+            XTryPoly = [XTryPoly XTry.^j];
         end
-        
-        % Modelo de regresión
-        A = [xtrn, ones(size(xtrn, 1), 1)];
-        sol = pinv(A) * ytrn;
-        ATest = [xtst, ones(size(xtst, 1), 1)];
-        ypred = ATest * sol;
-        error(k) = mean(abs(ytst - ypred));  % RMSE
+
+        % x alone
+        A = [XTrainPoly, ones(size(XTrainPoly, 1), 1)];
+        sol = ridge(YTrain, A, rp);
+        ATest = [XTryPoly, ones(size(XTryPoly, 1), 1)];
+        predictions = ATest*sol;
+        error(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+
+        % x + sin(x)
+        A = [XTrainPoly sin(XTrain), ones(size(XTrainPoly, 1), 1)];
+        sol = ridge(YTrain, A, rp);
+        ATest = [XTryPoly sin(XTry), ones(size(XTryPoly, 1), 1)];
+        predictions = ATest*sol;
+        errorsin(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+
+        % x + sin(x) + cos(x)
+        A = [XTrainPoly sin(XTrain) cos(XTrain), ones(size(XTrainPoly, 1), 1)];
+        sol = ridge(YTrain, A, rp);
+        ATest = [XTryPoly sin(XTry) cos(XTry), ones(size(XTryPoly, 1), 1)];
+        predictions = ATest*sol;
+        errorsincos(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
     end
-    Ers(order) = mean(error);
+    errorSummaries(order) = mean(error);
+    errorSummariessin(order) = mean(errorsin);
+    errorSummariessincos(order) = mean(errorsincos);
 end
 
 figure(2);
-bar(Ers);
-xlabel('Order of Polynomial');
-ylabel('Average RMSE');
-title('Model Complexity vs. Prediction Error');
+errors = [errorSummaries; errorSummariessin; errorSummariessincos];
+bar(errors);
+
+
+labels = {'x', 'x²', 'x³', 'x+sin(x)', 'x²+sin(x)', 'x³+sin(x)','x+sin(x)+cos(x)', 'x²+sin(x)+cos(x)', 'x³+sin(x)+cos(x)'};
+
+set(gca, 'XTickLabel', labels, 'XTick', 1:numel(labels), 'XTickLabelRotation', 45);
+
+for i = 1:length(errors)
+    text(i, errors(i), num2str(errors(i), '%.2f'),'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+end
+
+ylim([0 50000]);
+xlabel('Models');
+ylabel('Average MAE');
+title('Model Complexity vs. Prediction Error'), hold off;
+
+[~, optimalOrder] = min(errors);
+
+if optimalOrder<4 
+    disp("The best fitting polynomial is of order "+ optimalOrder);
+elseif optimalOrder > 6
+    disp("The best fitting polynomial is of order "+ mod(optimalOrder,3) + " plus sine plus cosine");
+else
+    disp("The best fitting polynomial is of order "+ mod(optimalOrder,3) + " plus sine");
+end
 
 pause;
 
-[~,orden] = min(Ers);
+%% Features Selection whit Random Sampling
+XTraining = XValidation;
+YTraining = YValidation;
+XAuxiliary = XTest;
 
-disp("El polinomio que mejor se ajusta es el de orden "+orden);
-
-%% Seleccion de caracteristica por pasos
-XTrain = XVal;
-YTrain = YVal;
-Xaux = XTest;
-
-selected_features = false(1, size(XTrain, 2));
-model_features = [];
-best_rmse = inf;
-
-for i=2:orden
-    XTrain = [XTrain XVal.^i];
-    XTest = [XTest Xaux.^i];
+XTrainingPoly = XTraining;
+XTestPoly = XTest;
+for i = 2:mod(optimalOrder, 3)
+    XTrainingPoly = [XTrainingPoly XValidation.^i];
+    XTestPoly = [XTestPoly XAuxiliary.^i];
 end
 
-for i = 1:size(XTrain, 2)
-    feature_rmse = inf(1, size(XTrain, 2));
-
-    for j = find(~selected_features)
-        features = [model_features j];
-
-        % Añadir una columna de unos para el término intercepto
-        A = [XTrain(:, features) ones(size(XTrain, 1), 1)];
-        sol = pinv(A) * YTrain;
-        YPredTrain = A * sol;
-        feature_rmse(j) = mean(abs(YPredTrain - YTrain));
-    end
-
-    [min_rmse, best_feature] = min(feature_rmse);
-    if min_rmse < best_rmse-50
-        best_rmse = min_rmse;
-        model_features = [model_features best_feature];
-        selected_features(best_feature) = true;
-        disp(['Adding feature ', num2str(best_feature), ' with ERRABS: ', num2str(best_rmse)]);
-    else
-        break;
+% Generate all combinations of characteristics
+features = 1:size(XTrainingPoly,2);
+combinations = {};
+for k = 1:length(features)
+    combs = nchoosek(features, k);
+    for j = 1:size(combs, 1)
+        combinations{end+1} = combs(j, :); 
     end
 end
 
-%% Prueba del modelo
-% Modelo final con las características seleccionadas
+for i=1:length(combinations)
+    error = zeros(5, 1);
+    for k = 1:5
+        % Random sampling of validation data
+        ids = randperm(size(XTrainingPoly, 1));
+        midPoint = floor(0.75 * length(ids));
+        XTrain = XTrainingPoly(ids(1:midPoint), combinations{i});
+        YTrain = YTraining(ids(1:midPoint));
+        XTry = XTrainingPoly(ids(midPoint+1:end), combinations{i});
+        YTry = YTraining(ids(midPoint+1:end));
+    
+        A = [XTrain, ones(size(XTrain, 1), 1)];
+        sol = ridge(YTrain, A, rp);
+        ATest = [XTry, ones(size(XTry, 1), 1)];
+        predictions = ATest*sol;
+        error(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+    end
+    errorSummaries(i) = mean(error);
+    disp(i);
+end
 
-A = [XTrain(:,features) ones(size(XTrain, 1), 1)];
-sol = pinv(A) * YTrain;
-ATest = [XTest(:,features) ones(size(XTest, 1), 1)];
-YPred = ATest * sol;
-errabs_test = mean(abs(YPred - YTest));
-errabs_muestra = abs(YPred-YTest);
-disp(['ErrAbs modelo y test: ', num2str(errabs_test)]);
+[~, better] = min(errorSummaries);
+modelFeatures = combinations{better};
 
-[YTest, ind] = sort(YTest);
-YPred = YPred(ind);
 
-% Visualización de los resultados
+disp("After the feature selection, this features left: ");
+disp(modelFeatures);
+
+%% Final Model Testing
+% Final model with selected features
+
+A = [XTrainingPoly(:, modelFeatures) ones(size(XTraining, 1), 1)];
+coefsRidge = ridge(YTraining, A, rp);
+ATest = [XTestPoly(:, modelFeatures) ones(size(XTest, 1), 1)];
+YPredicted = ATest * coefsRidge;
+testMAE = mean(abs(exp(YPredicted) - exp(YTest)));
+sampleMAE = abs(exp(YPredicted) - exp(YTest));
+disp(['Test MAE of model: ', num2str(testMAE)]);
+
+[YTest, indices] = sort(YTest);
+YPredicted = YPredicted(indices);
+
+% Visualization of results
 figure(3);
-plot(YPred, 'r.'); hold on;
-plot(YTest, 'b.'); hold off;
-legend('Predicciones', 'Datos reales');
-xlabel('Número de muestra');
-ylabel('Precio de la Propiedad');
-title('Comparación de datos reales y predicciones');
+plot(exp(YPredicted), 'r.'); hold on;
+plot(exp(YTest), 'b.'); hold off;
+legend('Predictions', 'Real Data');
+xlabel('Sample Number');
+ylabel('Property Price');
+title('Comparison of Real Data and Predictions');
 hold off;
 
 figure(4);
-plot(errabs_muestra, '*y');
-legend('Error absoluto');
-xlabel('Numero de muestra');
+plot(sampleMAE, '*y');
+legend('Absolute Error');
+xlabel('Sample Number');
 ylabel('Error');
-title('Error absoluto');
+title('Absolute Error');
 
-%% Prediccion sobre una casa
+%% Prediction on a property
 
-lat = input('Introduce la latitud, (deberia ir entre -34.689943 y -34.5359645): ');
-lon = input('Introduce la longitud, (deberia ir entre -58.343238830600001 y -58.529930788599998): ');
-hab = input('Introduce el numero de habitaciones de la propiedad: ');
-dorm = input('Introduce el numero de dormitorios de la propiedad: ');
-surftot = input('Introduce la superficie total de la propiedad: ');
-surfcov = input('Introduce la superficie cubierta de la propiedad: ');
-casa = input('Introduce 1 si es una casa 0 si no: ');
-dep = input('Introduce 1 si es un departamento 0 si no: ');
-ph = input('Introduce 1 si es una propiedad horizontal 0 si no: ');
+lat = input('Introduce the latitude of your property in Buenos Aires: ');
+lon = input('Introduce the longitude of your property un Buenos Aires: ');
+hab = input('Introduce the number of rooms in your property: ');
+dorm = input('Introduce the number of bedrooms in your property: ');
+surftot = input('Introduce the total surface of your property: ');
+surfcov = input('Introduce the covered surface of your property: ');
+casa = input('Introduce 1 if it is a house: ');
+dep = input('Introduce 1 if it is an apartment: ');
+ph = input('Introduce 1 if it is a condominium: ');
 
-Xcasa = [lat lon hab dorm surftot surfcov casa dep];
-Xcasa= (Xcasa-mean(x)) ./ std(x);
-Xaux = Xcasa;
-for i=2:orden
-    Xcasa = [Xcasa Xaux.^i];
+Xhouse = [lat lon hab dorm surftot surfcov casa dep];
+Xhouse = (Xhouse - mu) ./ sigma;
+Xaux = Xhouse;
+for i = 2:order
+    Xhouse = [Xhouse Xaux.^i];
 end
-A = [Xcasa(:,features) ones(size(Xcasa,1), 1)];
-Ycasa = A*sol;
+A = [Xhouse(:, modelFeatures) ones(size(Xhouse, 1), 1)];
+Yhouse = A * coefsRidge;
+Yhouse = exp(Yhouse);
 
-disp("Tu propiedad deberia tener un precio rondando los: "+Ycasa);
+disp("Your property price is: " + Yhouse);
