@@ -30,7 +30,7 @@ outliers = isoutlier(data.property_surface_covered, 'quartiles');
 data(outliers,:) = [];
 
 % Define dependent and independent variables
-% y = log(data.property_price);% We use log make the distribution more simetric
+
 y = data.property_price;
 data.property_price = []; 
 
@@ -140,14 +140,14 @@ title('Model Complexity vs. Prediction Error'), hold off;
 if optimalOrder<4 
     disp("The best fitting polynomial is of order "+ optimalOrder);
 elseif optimalOrder > 6
-    disp("The best fitting polynomial is of order "+ mod(optimalOrder,3) + " plus sine plus cosine");
+    disp("The best fitting polynomial is of order "+ (optimalOrder-6) + " plus sine plus cosine");
 else
-    disp("The best fitting polynomial is of order "+ mod(optimalOrder,3) + " plus sine");
+    disp("The best fitting polynomial is of order "+ (optimalOrder-3) + " plus sine");
 end
 
 pause;
 
-%% Features Selection whit Random Sampling
+%% Features Selection with Random Sampling
 
 YTraining = YValidation;
 XTrainingPoly = XValidation;
@@ -168,8 +168,8 @@ fprintf('\n                         ');
 
 for i=1:length(combinations)
     error = zeros(5, 1);
-    for k = 1:5
-        % Random sampling of validation data
+    for k = 1:20
+
         ids = randperm(size(XTrainingPoly, 1));
         midPoint = floor(0.75 * length(ids));
         XTrain = XTrainingPoly(ids(1:midPoint), combinations{i});
@@ -197,8 +197,7 @@ modelFeatures = combinations{better};
 disp("After the feature selection, this features left: ");
 disp(modelFeatures);
 
-%% Final Model Testing
-% Final model with selected features
+%% Final Model Testing with selected features
 
 A = [XTrainingPoly(:, modelFeatures) ones(size(XTrainingPoly, 1), 1)];
 coefsRidge = ridge(YTraining, A, rp);
@@ -222,7 +221,7 @@ hold off;
 
 
 
-%% Prediction on a property
+%% Prediction of properties
 
 lat = input('Introduce the latitude of your property in Buenos Aires: ');
 lon = input('Introduce the longitude of your property un Buenos Aires: ');
@@ -236,11 +235,32 @@ ph = input('Introduce 1 if it is a condominium: ');
 
 Xhouse = [lat lon hab dorm surftot surfcov casa dep];
 Xhouse = (Xhouse - mu) ./ sigma;
-Xaux = Xhouse;
-for i = 2:order
-    Xhouse = [Xhouse Xaux.^i];
-end
+
 A = [Xhouse(:, modelFeatures) ones(size(Xhouse, 1), 1)];
 Yhouse = A * coefsRidge;
 
 disp("Your property price is: " + Yhouse + " euros | " + Yhouse/0.93 + " USD");
+
+i = input("If you want to predict another house price introduce 1 else 0: ");
+
+while i==1
+    lat = input('Introduce the latitude of your property in Buenos Aires: ');
+    lon = input('Introduce the longitude of your property un Buenos Aires: ');
+    hab = input('Introduce the number of rooms in your property: ');
+    dorm = input('Introduce the number of bedrooms in your property: ');
+    surftot = input('Introduce the total surface of your property: ');
+    surfcov = input('Introduce the covered surface of your property: ');
+    casa = input('Introduce 1 if it is a house: ');
+    dep = input('Introduce 1 if it is an apartment: ');
+    ph = input('Introduce 1 if it is a condominium: ');
+
+    Xhouse = [lat lon hab dorm surftot surfcov casa dep];
+    Xhouse = (Xhouse - mu) ./ sigma;
+
+    A = [Xhouse(:, modelFeatures) ones(size(Xhouse, 1), 1)];
+    Yhouse = A * coefsRidge;
+
+    disp("Your property price is: " + Yhouse + " euros | " + Yhouse/0.93 + " USD");
+
+    i = input("If you want to predict another house price introduce 1 else 0: ");
+end
