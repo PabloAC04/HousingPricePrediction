@@ -68,7 +68,7 @@ numRepetitions = 10;
 errorSummaries = zeros(3, 1);
 errorSummariessin = zeros(3, 1);
 errorSummariessincos = zeros(3,1);
-rp = 0.7; % Ridge parameter (0<rp<1)
+rp = 0.5; % Ridge parameter (0<rp<1)
 
 for order = 1:3
     error = zeros(numRepetitions, 1);
@@ -205,7 +205,6 @@ coefsRidge = ridge(YTraining, A, rp);
 ATest = [XTestPoly(:, modelFeatures) ones(size(XTest, 1), 1)];
 YPredicted = ATest * coefsRidge;
 testMAE = mean(abs(exp(YPredicted) - exp(YTest)));
-sampleMAE = abs(exp(YPredicted) - exp(YTest));
 disp(['Test MAE of model: ', num2str(testMAE)]);
 
 [YTest, indices] = sort(YTest);
@@ -221,12 +220,7 @@ ylabel('Property Price');
 title('Comparison of Real Data and Predictions');
 hold off;
 
-figure(4);
-plot(sampleMAE, '*y');
-legend('Absolute Error');
-xlabel('Sample Number');
-ylabel('Error');
-title('Absolute Error');
+
 
 %% Prediction on a property
 
