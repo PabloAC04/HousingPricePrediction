@@ -30,7 +30,8 @@ outliers = isoutlier(data.property_surface_covered, 'quartiles');
 data(outliers,:) = [];
 
 % Define dependent and independent variables
-y = log(data.property_price); % We use log make the distribution more simetric
+% y = log(data.property_price);% We use log make the distribution more simetric
+y = data.property_price;
 data.property_price = []; 
 
 x = data.Variables;
@@ -96,21 +97,21 @@ for order = 1:3
         sol = ridge(YTrain, A, rp);
         ATest = [XTryPoly, ones(size(XTryPoly, 1), 1)];
         predictions = ATest*sol;
-        error(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+        error(k) = mean(abs(YTry - predictions));  % MAE
 
         % x + sin(x)
         A = [XTrainPoly sin(XTrain), ones(size(XTrainPoly, 1), 1)];
         sol = ridge(YTrain, A, rp);
         ATest = [XTryPoly sin(XTry), ones(size(XTryPoly, 1), 1)];
         predictions = ATest*sol;
-        errorsin(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+        errorsin(k) = mean(abs(YTry - predictions));  % MAE
 
         % x + sin(x) + cos(x)
         A = [XTrainPoly sin(XTrain) cos(XTrain), ones(size(XTrainPoly, 1), 1)];
         sol = ridge(YTrain, A, rp);
         ATest = [XTryPoly sin(XTry) cos(XTry), ones(size(XTryPoly, 1), 1)];
         predictions = ATest*sol;
-        errorsincos(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+        errorsincos(k) = mean(abs(YTry - predictions));  % MAE
     end
     errorSummaries(order) = mean(error);
     errorSummariessin(order) = mean(errorsin);
@@ -120,7 +121,6 @@ end
 figure(2);
 errors = [errorSummaries; errorSummariessin; errorSummariessincos];
 bar(errors);
-
 
 labels = {'x', 'x²', 'x³', 'x+sin(x)', 'x²+sin(x)', 'x³+sin(x)','x+sin(x)+cos(x)', 'x²+sin(x)+cos(x)', 'x³+sin(x)+cos(x)'};
 
@@ -148,16 +148,10 @@ end
 pause;
 
 %% Features Selection whit Random Sampling
-XTraining = XValidation;
-YTraining = YValidation;
-XAuxiliary = XTest;
 
-XTrainingPoly = XTraining;
+YTraining = YValidation;
+XTrainingPoly = XValidation;
 XTestPoly = XTest;
-for i = 2:mod(optimalOrder, 3)
-    XTrainingPoly = [XTrainingPoly XValidation.^i];
-    XTestPoly = [XTestPoly XAuxiliary.^i];
-end
 
 % Generate all combinations of characteristics
 features = 1:size(XTrainingPoly,2);
@@ -168,6 +162,9 @@ for k = 1:length(features)
         combinations{end+1} = combs(j, :); 
     end
 end
+
+disp("Selecting most representative features...");
+fprintf('\n                         ');
 
 for i=1:length(combinations)
     error = zeros(5, 1);
@@ -184,11 +181,14 @@ for i=1:length(combinations)
         sol = ridge(YTrain, A, rp);
         ATest = [XTry, ones(size(XTry, 1), 1)];
         predictions = ATest*sol;
-        error(k) = mean(abs(exp(YTry) - exp(predictions)));  % MAE
+        error(k) = mean(abs(YTry - predictions));  % MAE
     end
     errorSummaries(i) = mean(error);
-    disp(i);
+    percentage = (i/255)*100;
+    fprintf('\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\bProgress: %6.2f%%', percentage);
 end
+
+fprintf('\n');
 
 [~, better] = min(errorSummaries);
 modelFeatures = combinations{better};
@@ -200,11 +200,11 @@ disp(modelFeatures);
 %% Final Model Testing
 % Final model with selected features
 
-A = [XTrainingPoly(:, modelFeatures) ones(size(XTraining, 1), 1)];
+A = [XTrainingPoly(:, modelFeatures) ones(size(XTrainingPoly, 1), 1)];
 coefsRidge = ridge(YTraining, A, rp);
 ATest = [XTestPoly(:, modelFeatures) ones(size(XTest, 1), 1)];
 YPredicted = ATest * coefsRidge;
-testMAE = mean(abs(exp(YPredicted) - exp(YTest)));
+testMAE = mean(abs(YPredicted - YTest));
 disp(['Test MAE of model: ', num2str(testMAE)]);
 
 [YTest, indices] = sort(YTest);
@@ -212,8 +212,8 @@ YPredicted = YPredicted(indices);
 
 % Visualization of results
 figure(3);
-plot(exp(YPredicted), 'r.'); hold on;
-plot(exp(YTest), 'b.'); hold off;
+plot(YPredicted, 'r.'); hold on;
+plot(YTest, 'b.'); hold off;
 legend('Predictions', 'Real Data');
 xlabel('Sample Number');
 ylabel('Property Price');
@@ -242,6 +242,5 @@ for i = 2:order
 end
 A = [Xhouse(:, modelFeatures) ones(size(Xhouse, 1), 1)];
 Yhouse = A * coefsRidge;
-Yhouse = exp(Yhouse);
 
-disp("Your property price is: " + Yhouse);
+disp("Your property price is: " + Yhouse + " euros | " + Yhouse/0.93 + " USD");
